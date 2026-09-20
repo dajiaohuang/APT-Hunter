@@ -1,3 +1,4 @@
+# Core analysis
 evtx
 netaddr
 numpy
@@ -8,4 +9,9 @@ six
 XlsxWriter
 flatten_json
 geoip2
+openpyxl
+
+# Web dashboard, LLM analysis and agentic triage
+Flask
 requests
+python-docx

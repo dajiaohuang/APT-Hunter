@@ -8,6 +8,7 @@ import lib.O365Hunter as O365Hunter
 import lib.CSVDetection as CSVDetection
 import lib.EvtxHunt as EvtxHunt
 import lib.SigmaHunter as SigmaHunter
+import lib.LLMAnalyzer as LLMAnalyzer
 from evtx import PyEvtxParser
 from sys import exit
 from pytz import timezone
@@ -678,6 +679,104 @@ def report():
 
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# LLM Analysis
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_llm_analysis(
+    allresults_df,
+    output_base,
+    min_severity="High",
+    llm_provider="ollama",
+    llm_base_url=None,
+    llm_model="llama3",
+    llm_api_key=None,
+    max_events_per_batch=50,
+    llm_context_size=None,
+):
+    """
+    Run LLM-based threat analysis on APT-Hunter detected events filtered by
+    minimum severity.  Appends an 'LLM Analysis' sheet to the Excel report
+    and saves a standalone Markdown report.
+    """
+    run_start = time.monotonic()
+
+    # ── Run analysis ──────────────────────────────────────────────────────────
+    llm_results = LLMAnalyzer.analyze_events_with_llm(
+        events_df=allresults_df,
+        min_severity=min_severity,
+        llm_provider=llm_provider,
+        llm_base_url=llm_base_url,
+        llm_model=llm_model,
+        llm_api_key=llm_api_key,
+        max_events_per_batch=max_events_per_batch,
+        llm_context_size=llm_context_size,
+    )
+
+    if not llm_results:
+        print(f"[LLM] No analysis results to save.  Time: {time.monotonic() - run_start:.1f}s")
+        return
+
+    # ── Save Markdown report ──────────────────────────────────────────────────
+    md_path = output_base + "_LLM_Analysis.md"
+    md_content = LLMAnalyzer.results_to_markdown(llm_results, output_name=output_base)
+    try:
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(md_content)
+        print(f"[LLM] Markdown report saved as {md_path}")
+    except Exception as e:
+        print(f"[LLM] Warning: Could not save Markdown report: {e}")
+
+    # ── Append LLM Analysis sheet to existing Excel report ────────────────────
+    excel_path = output_base + "_Report.xlsx"
+    llm_df = LLMAnalyzer.results_to_dataframe(llm_results)
+    try:
+        from openpyxl import load_workbook
+        # openpyxl is installed as a dependency of xlsxwriter/pandas, should be available
+        with pd.ExcelWriter(
+            excel_path,
+            engine="openpyxl",
+            mode="a",
+            if_sheet_exists="replace",
+        ) as writer:
+            llm_df.to_excel(writer, sheet_name="LLM Analysis", index=False)
+        print(f"[LLM] 'LLM Analysis' sheet appended to {excel_path}")
+    except Exception as e:
+        print(f"[LLM] Warning: Could not append LLM Analysis sheet to Excel: {e}")
+        # Fall back: save as a separate Excel file
+        fallback_path = output_base + "_LLM_Analysis.xlsx"
+        try:
+            llm_df.to_excel(fallback_path, index=False)
+            print(f"[LLM] LLM analysis saved as separate file: {fallback_path}")
+        except Exception as e2:
+            print(f"[LLM] Error saving LLM analysis Excel fallback: {e2}")
+
+    # ── Final summary ───────────────────────────────────────────────────────
+    total_time = time.monotonic() - run_start
+    malicious = [r for r in llm_results if r.get("LLM Malicious") == "YES"]
+    clean = [r for r in llm_results if r.get("LLM Malicious") == "NO"]
+    errors = [r for r in llm_results if r.get("LLM Malicious") == "ERROR"]
+
+    sev_counts = {}
+    for r in malicious:
+        sev = r.get("Severity", "Unknown")
+        sev_counts[sev] = sev_counts.get(sev, 0) + 1
+    sev_order = LLMAnalyzer.SEVERITY_ORDER
+    sev_summary = ", ".join(
+        f"{sev}: {sev_counts[sev]}"
+        for sev in sorted(sev_counts, key=lambda s: sev_order.index(s) if s in sev_order else -1, reverse=True)
+    ) or "none"
+
+    print(
+        "\n[LLM] ── Summary ──────────────────────────────────────────────\n"
+        f"[LLM]   Total time: {total_time:.1f}s\n"
+        f"[LLM]   Events analyzed: {len(llm_results)}\n"
+        f"[LLM]   Malicious: {len(malicious)}  |  Clean: {len(clean)}  |  Errors: {len(errors)}\n"
+        f"[LLM]   Malicious by severity: {sev_summary}\n"
+        "[LLM] ──────────────────────────────────────────────────────────\n"
+    )
+
+
 def convert_list():
     global timestart,timeend,User_SIDs,SMB_Server_events,SMB_Client_events,TerminalServices_RDPClient_events,Executed_Process_Events,Group_Policy_events,Object_Access_Events,input_timezone,Logon_Events,Executed_Process_Summary,TerminalServices_Summary,Security_Authentication_Summary,Sysmon_events,WinRM_events,Security_events,System_events,ScheduledTask_events,Powershell_events,Powershell_Operational_events,TerminalServices_events,Windows_Defender_events,Timesketch_events,TerminalServices_Summary,Security_Authentication_Summary,Executed_Powershell_Summary
     Results=[Executed_Powershell_Summary,SMB_Server_events,User_SIDs,SMB_Client_events,TerminalServices_RDPClient_events,Executed_Process_Events,Group_Policy_events,Object_Access_Events,Logon_Events,Executed_Process_Summary,TerminalServices_Summary,Security_Authentication_Summary,Sysmon_events,WinRM_events,Security_events,System_events,ScheduledTask_events,Powershell_events,Powershell_Operational_events,TerminalServices_events,Windows_Defender_events,TerminalServices_Summary,Security_Authentication_Summary
@@ -733,6 +832,31 @@ def create_out_dir(output):
 
     return output+"/"+output
 
+def launch_webapp(report_path, host="0.0.0.0", port=5000):
+    """Launch the APT-Hunter web dashboard for an existing *_Report.xlsx file,
+    or an output directory containing one (e.g. the folder created via -o)."""
+    if os.path.isdir(report_path):
+        candidates = sorted(glob.glob(os.path.join(report_path, "*_Report.xlsx")))
+        if not candidates:
+            print(f"No *_Report.xlsx file found in directory: {report_path}")
+            return
+        report_path = candidates[0]
+    if not os.path.isfile(report_path):
+        print(f"Report file not found: {report_path}")
+        return
+    try:
+        from webapp.server import create_app
+    except ImportError as e:
+        print(f"Could not load the web dashboard (missing dependency: {e}).\nInstall requirements with: pip install -r requirements.txt")
+        return
+    print(f"Loading report for web dashboard: {report_path}")
+    app = create_app(report_path)
+    print(f"APT-Hunter web dashboard ready -> http://{host}:{port}/  (press CTRL+C to stop)")
+    try:
+        app.run(host=host, port=port, threaded=True)
+    except KeyboardInterrupt:
+        print("\nWeb dashboard stopped.")
+
 def clean_temp_dir():
     global temp_dir
     if os.path.exists(temp_dir):
@@ -768,7 +892,66 @@ def main():
     #parser.add_argument("-evtfreq","--evtfreq", help="Produce event ID frequency analysis report",action='store_true')
     parser.add_argument("-cores","--cores", help="cpu cores to be used in multiprocessing , default is half the number of availble CPU cores")
 
+    # ── Web dashboard arguments ───────────────────────────────────────────────
+    parser.add_argument("-web","--web", help="Launch the web dashboard once the analysis finishes, showing the generated report", action='store_true')
+    parser.add_argument("-webview","--webview", help="Launch the web dashboard for an already generated report (path to a *_Report.xlsx file or its output directory) without running a new analysis")
+    parser.add_argument("-webhost","--webhost", help="Host/interface for the web dashboard (default 0.0.0.0)", default="0.0.0.0")
+    parser.add_argument("-webport","--webport", help="Port for the web dashboard (default 5000)", type=int, default=5000)
+
+    # ── Local LLM analysis arguments ──────────────────────────────────────────
+    parser.add_argument(
+        "-llm", "--llm",
+        help="Enable local LLM threat analysis on detected events (requires a running OpenAI-compatible LLM server, e.g. Ollama)",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-llm-provider", "--llm-provider",
+        help="LLM provider: ollama | llmstudio | llama.cpp (default: ollama)",
+        default="ollama",
+        choices=["ollama", "llmstudio", "llama.cpp"],
+    )
+    parser.add_argument(
+        "-llm-url", "--llm-url",
+        help="Base URL of the local LLM API endpoint (default depends on provider)",
+        default=None,
+    )
+    parser.add_argument(
+        "-llm-model", "--llm-model",
+        help="LLM model name to use for analysis (default: llama3)",
+        default="llama3",
+    )
+    parser.add_argument(
+        "-llm-severity", "--llm-severity",
+        help="Minimum event severity to include in LLM analysis: Informational | Low | Medium | High | Critical (default: High)",
+        default="High",
+        choices=["Informational", "Low", "Medium", "High", "Critical"],
+    )
+    parser.add_argument(
+        "-llm-key", "--llm-key",
+        help="API key for the LLM server (default depends on provider)",
+        default=None,
+    )
+    parser.add_argument(
+        "-llm-batch", "--llm-batch",
+        help="Maximum number of events to send per LLM request/batch (default: 50). "
+             "Acts as an upper cap; actual batches are sized smaller automatically "
+             "when -llm-context is known.",
+        default=50,
+        type=int,
+    )
+    parser.add_argument(
+        "-llm-context", "--llm-context",
+        help="Model's context window size in tokens, used to pack as many events as fit "
+             "into 80%% of the context per batch (default: auto-detect for Ollama, "
+             "otherwise falls back to a fixed -llm-batch size)",
+        default=None,
+        type=int,
+    )
+
     args = parser.parse_args()
+    if args.webview is not None:
+        launch_webapp(args.webview, args.webhost, args.webport)
+        return
     if args.out is not None:
         Output=create_out_dir(args.out)
     if (args.path is None ):# and args.security is None and args.system is None and args.scheduledtask is None and args.defender is None and args.powershell is None and args.powershellop is None and args.terminal is None and args.winrm is None and args.sysmon is None):
@@ -846,6 +1029,30 @@ def main():
             auto_detect(Path)
             #convert_list()
             report()
+
+            # ── Optional LLM analysis ─────────────────────────────────────────
+            if args.llm:
+                # Read back the allresults CSV that report() already saved
+                timesketch_csv = Output + "_TimeSketch.csv"
+                try:
+                    allresults_df = pd.read_csv(timesketch_csv)
+                except Exception as csv_err:
+                    print(f"[LLM] Could not read results CSV for LLM analysis: {csv_err}")
+                    allresults_df = None
+
+                if allresults_df is not None:
+                    run_llm_analysis(
+                        allresults_df=allresults_df,
+                        output_base=Output,
+                        min_severity=args.llm_severity,
+                        llm_provider=args.llm_provider,
+                        llm_base_url=args.llm_url,
+                        llm_model=args.llm_model,
+                        llm_api_key=args.llm_key,
+                        max_events_per_batch=args.llm_batch,
+                        llm_context_size=args.llm_context,
+                    )
+
             clean_temp_dir()
         except Exception as e:
             print("Error "+str(e))
@@ -853,6 +1060,9 @@ def main():
 
         toc = time.time()
         print('Analysis finished in {:.4f} seconds'.format(toc-tic))
+
+        if args.web:
+            launch_webapp(Output + "_Report.xlsx", args.webhost, args.webport)
         return
 
 

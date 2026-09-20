@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APT-Hunter Dashboard</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">AH</div>
+      <div class="brand-text">
+        <div class="brand-title">APT-Hunter</div>
+        <div class="brand-sub">Report Dashboard</div>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-view="dashboard">
+        <span class="nav-icon">&#9673;</span> Dashboard
+      </button>
+      <button class="nav-item" data-view="incidents">
+        <span class="nav-icon">&#9873;</span> Incident Timeline
+      </button>
+      <button class="nav-item" data-view="triage">
+        <span class="nav-icon">&#10022;</span> Agentic Triage
+      </button>
+      <div class="nav-group" id="nav-events">
+        <div class="nav-group-title">Event Logs</div>
+      </div>
+      <div class="nav-group" id="nav-summaries">
+        <div class="nav-group-title">Summary Tables</div>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <button class="nav-item" data-view="settings" id="nav-settings">
+        <span class="nav-icon">&#9881;</span> Settings
+      </button>
+      <button id="theme-toggle" class="ghost-btn" title="Toggle theme">
+        <span id="theme-icon">&#9788;</span> <span id="theme-label">Light</span>
+      </button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1 id="report-title">Loading report&hellip;</h1>
+        <div class="topbar-meta" id="report-meta"></div>
+      </div>
+      <div class="topbar-actions">
+        <button class="ghost-btn" id="refresh-btn" title="Reload data">&#8635; Refresh</button>
+      </div>
+    </header>
+
+    <div class="content" id="content">
+      <section id="view-dashboard" class="view"></section>
+      <section id="view-sheet" class="view" style="display:none"></section>
+      <section id="view-incidents" class="view" style="display:none"></section>
+      <section id="view-triage" class="view" style="display:none"></section>
+      <section id="view-settings" class="view" style="display:none"></section>
+    </div>
+  </main>
+</div>
+
+<div class="drawer-backdrop" id="drawer-backdrop"></div>
+<aside class="drawer" id="drawer">
+  <div class="drawer-header">
+    <h2>Event details</h2>
+    <button class="icon-btn" id="drawer-close">&times;</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+
+<div class="modal-backdrop" id="app-modal-backdrop"></div>
+<div class="modal" id="app-modal">
+  <div class="modal-header">
+    <h2 id="app-modal-title">Modal</h2>
+    <button class="icon-btn" id="app-modal-close">&times;</button>
+  </div>
+  <div class="modal-body" id="app-modal-body"></div>
+</div>
+
+<div class="tooltip" id="chart-tooltip" style="display:none"></div>
+
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

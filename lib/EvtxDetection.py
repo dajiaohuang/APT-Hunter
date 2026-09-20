@@ -4,9 +4,20 @@ from netaddr import *
 import xml.etree.ElementTree as ET
 import pandas as pd
 from datetime import datetime, timezone
+import ipaddress
 from evtx import PyEvtxParser
-from dateutil.parser import parse
+from dateutil.parser import parse as _dateutil_parse
 from dateutil.parser import isoparse
+
+_TRAILING_TZ_LABEL = re.compile(r'\s+UTC\s*$', re.IGNORECASE)
+
+def parse(ts_string, **kwargs):
+    """Wrapper around dateutil.parser.parse that strips redundant trailing
+    timezone labels such as ' UTC' that appear after a 'Z' suffix in some
+    EVTX timestamps (e.g. '2025-08-29T02:56:43.6045864Z UTC')."""
+    if isinstance(ts_string, str):
+        ts_string = _TRAILING_TZ_LABEL.sub('', ts_string).strip()
+    return _dateutil_parse(ts_string, **kwargs)
 from pytz import timezone
 import pickle
 import itertools
@@ -3933,7 +3944,7 @@ def detect_events_TerminalServices_LocalSessionManager_log(file_name, shared_dat
                 #print(Source_Network_Address[0][0])
                 #print(len(Source_Network_Address))
                 if len(Source_Network_Address)>0:
-                    #print(IPAddress(Source_Network_Address[0][0].strip()).is_private())
+                    #print(ipaddress.ip_address(Source_Network_Address[0][0].strip()).is_private)
                     if  Source_Network_Address[0][0].strip()=="127.0.0.1":
                         #print("##### " + record["timestamp"] + " #### EventID=" + EventID[0].strip() + " ### Remote Desktop Services: Session logon succeeded: #### ", end='')
                         #print("Found User ("+User[0].strip()+") connecting from Local Host ( 127.0.0.1 ) which means attacker is using tunnel to connect RDP ")
@@ -3953,7 +3964,7 @@ def detect_events_TerminalServices_LocalSessionManager_log(file_name, shared_dat
                         TerminalServices_events[0]['Event ID'].append(EventID[0])
                         TerminalServices_events[0]['Original Event Log'].append(str(record['data']).replace("\r", " "))
                         lock.release()
-                    if Source_Network_Address[0][0].strip()!="127.0.0.1" and not IPAddress(Source_Network_Address[0][0].strip()).is_private():
+                    if Source_Network_Address[0][0].strip()!="127.0.0.1" and not ipaddress.ip_address(Source_Network_Address[0][0].strip()).is_private:
                         #print("##### " + record["timestamp"] + " #### EventID=" + EventID[0].strip() + " ### Remote Desktop Services: Session logon succeeded: #### ", end='')
                         #print("Found User ("+User[0].strip()+") connecting from public IP (" +Source_Network_Address[0][0].strip()+") ")
 
@@ -4017,7 +4028,7 @@ def detect_events_TerminalServices_LocalSessionManager_log(file_name, shared_dat
                 #print(Source_Network_Address[0][0])
                 #print(len(Source_Network_Address))
                 if len(Source_Network_Address)<1:
-                    #print(IPAddress(Source_Network_Address[0][0].strip()).is_private())
+                    #print(ipaddress.ip_address(Source_Network_Address[0][0].strip()).is_private)
                     Event_desc ="User ("+User[0].strip()+") connecting from ( "+Source_Network_Address_Terminal_NotIP[0]+" ) "
                     lock.acquire()
                     TerminalServices_events[0]['Date and Time'].append(parse(record["timestamp"]).astimezone(input_timzone).isoformat())
@@ -4038,7 +4049,7 @@ def detect_events_TerminalServices_LocalSessionManager_log(file_name, shared_dat
                 #print(Source_Network_Address[0][0])
                 #print(len(Source_Network_Address))
                 if len(Source_Network_Address)<1:
-                    #print(IPAddress(Source_Network_Address[0][0].strip()).is_private())
+                    #print(ipaddress.ip_address(Source_Network_Address[0][0].strip()).is_private)
                     Event_desc ="User ("+User[0].strip()+") connecting from ( "+Source_Network_Address_Terminal_NotIP[0]+" ) after working hours"
                     lock.acquire()
                     TerminalServices_events[0]['Date and Time'].append(parse(record["timestamp"]).astimezone(input_timzone).isoformat())
